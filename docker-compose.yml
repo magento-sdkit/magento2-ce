@@ -1,0 +1,60 @@
+version: '3.7'
+
+x-magento: &magento
+  volumes:
+    - ${SOURCE_PATH}:${MAGENTO_ROOT}
+  environment:
+    - DOCUMENT_ROOT=${DOCUMENT_ROOT}
+    - MAGENTO_ROOT=${MAGENTO_ROOT}
+    - MAGENTO_RUN_MODE=${MAGENTO_RUN_MODE}
+    - ENABLE_SENDMAIL=${ENABLE_SENDMAIL}
+    - DEBUG=${DEBUG}
+    - 'PHP_EXTENSIONS=bcmath bz2 calendar exif gd gettext intl mysqli opcache pdo_mysql redis soap sockets sysvmsg sysvsem sysvshm xsl zip pcntl ${EXT_PHP_EXTENSIONS}'
+  networks:
+    - default
+  extra_hosts:
+    - 'xdebug mailhog:${HOST_IP:-172.17.0.1}'
+    - '${SHARED_SERVICES:-mysql redis elasticsearch}:${HOST_IP:-172.17.0.1}'
+x-httpd-alpine: &httpd-alpine
+  volumes:
+    - ${SOURCE_PATH}:${MAGENTO_ROOT}
+  environment:
+    - VIRTUAL_HOST=${MAIN_DOMAIN},${MULTIPLE_DOMAINS}
+    - VIRTUAL_PORT=80
+    - CERT_NAME=default
+    - DOCUMENT_ROOT=${MAGENTO_ROOT}/${DOCUMENT_ROOT}
+    - APP_ROOT=${MAGENTO_ROOT}
+    - MAGENTO_RUN_MODE=${MAGENTO_RUN_MODE}
+  networks:
+    - default
+    - proxy
+services:
+  deploy:
+    image: 'magento/magento-cloud-docker-php:${PHP_VER}-cli${DOCKER_VER_TAG}-2'
+    volumes:
+        - ${SOURCE_PATH}:${MAGENTO_ROOT}
+        - '~/.composer/cache:/root/.composer/cache:delegated'
+        - '~/.ssh:/root/.ssh:delegated'
+        - '~/bin/modman:/usr/local/bin/modman:ro'
+#    command: ' export PATH=$PATH:$HOME/.magento-cloud/bin'
+    <<: *magento
+  web:
+    # image: 'httpd:2.4.46-alpine'
+    image: 'pmis/httpd-proxy:1'
+    expose:
+      - 8080
+      - 80
+    <<: *httpd-alpine
+  fpm:
+    image: 'magento/magento-cloud-docker-php:${PHP_VER}-fpm${DOCKER_VER_TAG}'
+    <<: *magento
+  fpm_xdebug:
+    image: 'magento/magento-cloud-docker-php:${PHP_VER}-fpm${DOCKER_VER_TAG}'
+    environment:
+      - PHP_EXTENSIONS=bcmath bz2 calendar exif gd gettext intl mysqli opcache pdo_mysql redis soap sockets sysvmsg sysvsem sysvshm xsl zip pcntl sodium xdebug
+      - 'PHP_IDE_CONFIG=serverName=${MAIN_DOMAIN}'
+      - 'XDEBUG_CONFIG=remote_host=${HOST_IP}'
+    <<: *magento
+networks:
+  proxy:
+    external: true
